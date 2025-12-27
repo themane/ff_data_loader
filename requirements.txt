@@ -3,3 +3,4 @@ uvicorn
 PyYAML
 requests
 python-dateutil
+python-multipart

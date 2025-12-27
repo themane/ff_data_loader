@@ -16,9 +16,9 @@ def read_root():
 
 
 @app.post("/load")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(asset_name: str, file: UploadFile = File(...)):
     content = await file.read()
     decoded = content.decode("utf-8")
     csv_reader = csv.DictReader(StringIO(decoded))
-    DataLoader(configs).load_data(csv_reader)
+    DataLoader(configs).load_data(csv_reader, asset_name=asset_name)
     return {"message": "CSV data processed successfully."}

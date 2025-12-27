@@ -47,8 +47,9 @@ The application will be available at `http://127.0.0.1:8000`.
 ### API Endpoints
 
 - **GET /**: Returns a welcome message.
-- **POST /load**: Upload the credit card statement in CSV file format for uploading to firefly III.
+- **POST /load**: Upload a CSV file for processing.
   - Accepts a CSV file via multipart/form-data.
+  - query parameter: `asset_name` (string) - specifies the name for the asset.
   - Processes the CSV data using the configured DataLoader service.
   - Returns a success message upon completion.
 

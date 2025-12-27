@@ -12,7 +12,7 @@ class DataLoader:
     def __init__(self, configs):
         self.configs = configs
 
-    def load_data(self, csv_reader: DictReader):
+    def load_data(self, csv_reader: DictReader, asset_name: str):
         all_txs = self.read_csv(csv_reader)
         print(f"Prepared {len(all_txs)} transactions from csv")
 
@@ -58,7 +58,7 @@ class DataLoader:
             raise
         return r.json()
 
-    def read_csv(self, csv_reader: DictReader) -> List[Dict]:
+    def read_csv(self, csv_reader: DictReader, asset_name: str) -> List[Dict]:
         txs = []
         headers = [h.lower().strip() for h in csv_reader.fieldnames]
         for row in csv_reader:
@@ -81,7 +81,7 @@ class DataLoader:
                 "amount": amount,  # positive decimal string
                 "currency": self.configs["app"]["currency"],
                 # IMPORTANT: use source_name so Firefly links to existing account by name.
-                "source_name": self.configs["app"]["credit_card_account_name"],
+                "source_name": asset_name,
                 # destination_name will become the expense account/merchant in Firefly
                 "destination_name": description[:100],
             }

@@ -1,0 +1,5 @@
+/.idea
+/.venv
+/ff_data_loader.iml
+/resources
+/__pycache__

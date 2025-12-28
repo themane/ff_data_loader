@@ -1,7 +1,7 @@
 from dateutil import parser as dateparser
 
 
-def parse_amount(raw: str) -> str:
+def parse_amount(raw: str):
     """Normalize amount string to positive decimal string (Firefly expects positive amount and type reflects direction)."""
     s = raw.strip().replace(",", "")  # remove thousands separators
     # If CSV has debit as negative, make positive; keep sign to decide type later if you want.
@@ -12,12 +12,12 @@ def parse_amount(raw: str) -> str:
     s = s.lstrip("₹$€")
     # Ensure two decimals
     try:
-        val = float(s)
+        amount = float(s)
     except Exception:
         # fallback: strip non-numeric
         filtered = ''.join(ch for ch in s if (ch.isdigit() or ch in ".-"))
-        val = float(filtered) if filtered else 0.0
-    return f"{val:.2f}"
+        amount = float(filtered) if filtered else 0.0
+    return f"{abs(amount):.2f}", "deposit" if float(amount) < 0 else "withdrawal"  # expense from CC
 
 
 def normalize_date(raw: str) -> str:

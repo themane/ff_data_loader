@@ -12,19 +12,34 @@ class DataLoader:
     def __init__(self, configs):
         self.configs = configs
 
-    def load_data(self, csv_reader: DictReader, asset_name: str):
-        all_txs = self.read_csv(csv_reader)
-        print(f"Prepared {len(all_txs)} transactions from csv")
+    def load_data(self, csv_reader: DictReader, asset_name: str, group_title: str):
+        deposits, withdrawals = self.read_csv(csv_reader, asset_name=asset_name)
+        print(f"Prepared {len(deposits + withdrawals)} transactions from csv")
 
         # send in batches
         succeeded = 0
         failed = 0
-        for i in range(0, len(all_txs), self.configs["app"]["batch_size"]):
-            batch = all_txs[i:i + self.configs["app"]["batch_size"]]
+        for i in range(0, len(deposits), self.configs["app"]["batch_size"]):
+            batch = deposits[i:i + self.configs["app"]["batch_size"]]
             try:
-                res = self.post_transactions_batch(batch)
+                res = self.post_transactions_batch(batch, group_title=group_title)
                 # The API returns created objects — you can inspect them
-                print(f"Batch {i // self.configs["app"]["batch_size"] + 1}: posted {len(batch)} txs.")
+                print(f"Batch {i // self.configs["app"]["batch_size"] + 1}: posted {len(batch)} txs and received {len(res)} responses.")
+                succeeded += len(batch)
+                # be polite
+                time.sleep(0.5)
+            except Exception as e:
+                print("Batch failed:", e)
+                failed += len(batch)
+                # continue with next batch
+                time.sleep(1)
+        
+        for i in range(0, len(withdrawals), self.configs["app"]["batch_size"]):
+            batch = withdrawals[i:i + self.configs["app"]["batch_size"]]
+            try:
+                res = self.post_transactions_batch(batch, group_title=group_title)
+                # The API returns created objects — you can inspect them
+                print(f"Batch {i // self.configs["app"]["batch_size"] + 1}: posted {len(batch)} txs and received {len(res)} responses.")
                 succeeded += len(batch)
                 # be polite
                 time.sleep(0.5)
@@ -36,7 +51,7 @@ class DataLoader:
 
         print(f"Done. succeeded={succeeded} failed={failed}")
 
-    def post_transactions_batch(self, txs_batch: List[Dict]) -> Dict:
+    def post_transactions_batch(self, txs_batch: List[Dict], group_title: str) -> Dict:
         headers = {
             "Authorization": f"Bearer {self.configs["firefly"]["token"]}",
             # Firefly expects this Accept header in some versions to avoid HTML redirects.
@@ -45,7 +60,8 @@ class DataLoader:
         }
         payload = {
             "apply_rules": self.configs["app"]["apply_rules"],
-            "transactions": txs_batch
+            "transactions": txs_batch,
+            "group_title": group_title
         }
         r = requests.post(f"{self.configs["firefly"]["base_url"]}/api/v1/transactions",
                           headers=headers,
@@ -58,32 +74,48 @@ class DataLoader:
             raise
         return r.json()
 
-    def read_csv(self, csv_reader: DictReader, asset_name: str) -> List[Dict]:
-        txs = []
-        headers = [h.lower().strip() for h in csv_reader.fieldnames]
+    def read_csv(self, csv_reader: DictReader, asset_name: str):
+        deposits = []
+        withdrawals = []
         for row in csv_reader:
             # try common header names
             # adapt these arrays if your CSV uses other headers
-            date_raw = row.get("date") or row.get("transaction date") or row.get("txn date") or row.get("posted date") or ""
-            amount_raw = row.get("amount") or row.get("amt") or ""
-            desc_raw = row.get("description") or row.get("details") or row.get("narration") or row.get("merchant") or ""
+            row_lower = {k.lower().strip(): v for k, v in row.items()}
 
+            date_raw = row_lower.get("date") or row_lower.get("transaction date") or row_lower.get("txn date") or row_lower.get("posted date") or ""
+            amount_raw = row_lower.get("amount") or row_lower.get("amt") or ""
+            desc_raw = row_lower.get("description") or row_lower.get("details") or row_lower.get("narration") or row_lower.get("merchant") or ""
             date = normalize_date(date_raw) if date_raw else None
-            amount = parse_amount(amount_raw)
-            txn_type = "deposit" if float(amount) < 0 else "withdrawal"  # expense from CC
+            amount, txn_type = parse_amount(amount_raw)
             description = desc_raw.strip() if desc_raw else "(no description)"
 
             # Build transaction object - use withdrawal so credit card is the source
-            tx = {
-                "date": date,  # YYYY-MM-DD
-                "description": description[:255],
-                "type": txn_type,
-                "amount": amount,  # positive decimal string
-                "currency": self.configs["app"]["currency"],
-                # IMPORTANT: use source_name so Firefly links to existing account by name.
-                "source_name": asset_name,
-                # destination_name will become the expense account/merchant in Firefly
-                "destination_name": description[:100],
-            }
-            txs.append(tx)
-        return txs
+            if txn_type == "deposit":
+                deposits.append({
+                    "date": date,  # YYYY-MM-DD
+                    "description": description[:255],
+                    "type": txn_type,
+                    "amount": amount,  # positive decimal string
+                    "currency": self.configs["app"]["currency"],
+                    # IMPORTANT: use source_name so Firefly links to existing account by name.
+                    "source_name": "UPI" if description[:100].startswith("PAYMENT RECEIVED. THANK YOU") else description[:100],
+                    # destination_name will become the income account in Firefly
+                    "destination_name": asset_name,
+                    "category_name": row_lower.get("category") or "",
+                    "external_id": row_lower.get("reference") or ""
+                })
+            if txn_type == "withdrawal":
+                withdrawals.append({
+                    "date": date,  # YYYY-MM-DD
+                    "description": description[:255],
+                    "type": txn_type,
+                    "amount": amount,  # positive decimal string
+                    "currency": self.configs["app"]["currency"],
+                    # IMPORTANT: use source_name so Firefly links to existing account by name.
+                    "source_name": asset_name,
+                    # destination_name will become the expense account/merchant in Firefly
+                    "destination_name": description[:100],
+                    "category_name": row_lower.get("category") or "",
+                    "external_id": row_lower.get("reference") or ""
+                })
+        return deposits, withdrawals
